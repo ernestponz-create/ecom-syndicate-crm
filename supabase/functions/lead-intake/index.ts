@@ -260,7 +260,7 @@ Deno.serve(async (req) => {
       return json(req, 500, { success: false, message: "Server error" });
     tagId = created.id;
   }
-  const isQuiz = sourcePage.toLowerCase() === "quiz";
+  const isQuiz = /^quiz/.test(sourcePage.toLowerCase()); // quiz, quiz-v2, quiz-b ...
   const tagIds: number[] = [tagId!];
   if (isQuiz) {
     try {
