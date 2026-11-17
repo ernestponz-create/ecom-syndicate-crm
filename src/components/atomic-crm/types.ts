@@ -103,6 +103,10 @@ export type Contact = {
   phone_jsonb: PhoneNumberAndType[];
   nb_tasks?: number;
   company_name?: string;
+  lead_source?: string | null;
+  readiness?: string | null;
+  situation?: string | null;
+  timeline?: string | null;
 } & Pick<RaRecord, "id">;
 
 export type ContactNote = {

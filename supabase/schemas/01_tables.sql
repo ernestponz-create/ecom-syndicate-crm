@@ -49,7 +49,11 @@ create table public.contacts (
     sales_id bigint,
     linkedin_url text,
     email_jsonb jsonb,
-    phone_jsonb jsonb
+    phone_jsonb jsonb,
+    lead_source text,
+    readiness text,
+    situation text,
+    timeline text
 );
 
 create table public.contact_notes (

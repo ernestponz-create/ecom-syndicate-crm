@@ -3,6 +3,9 @@ export const englishCrmMessages = {
     companies: {
       name: "Company |||| Companies",
       forcedCaseName: "Company",
+      filters: {
+        pipeline: "Pipeline",
+      },
       fields: {
         name: "Company name",
         website: "Website",
@@ -167,6 +170,11 @@ export const englishCrmMessages = {
         today: "Today",
         tags: "Tags",
         tasks: "Tasks",
+        lead_source: "Lead source",
+        readiness: "Readiness",
+        situation: "Situation",
+        timeline: "Timeline",
+        temperature: "Temperature",
       },
       hot: {
         empty_change_status:

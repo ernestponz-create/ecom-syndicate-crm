@@ -1,5 +1,15 @@
 import { endOfYesterday, startOfMonth, startOfWeek, subMonths } from "date-fns";
-import { CheckSquare, Clock, Tag, TrendingUp, Users } from "lucide-react";
+import {
+  CheckSquare,
+  Clock,
+  Compass,
+  Flame,
+  Gauge,
+  Hourglass,
+  Megaphone,
+  Tag,
+  Users,
+} from "lucide-react";
 import {
   useGetIdentity,
   useGetList,
@@ -16,9 +26,42 @@ import { ResponsiveFilters } from "../misc/ResponsiveFilters";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { ActiveFilterButton } from "../misc/ActiveFilterButton";
 import { AccountManagerFilter } from "../sales/AccountManagerInput";
+import {
+  getQuizSourceLabel,
+  isQuizSource,
+  leadFieldGroups,
+  temperatureValues,
+} from "./leadFields";
+
+// Distinct quiz-type lead sources found in the data ('quiz', 'quiz-v2', ...).
+const useQuizSources = (): string[] => {
+  const { data } = useGetList("contacts", {
+    pagination: { page: 1, perPage: 1000 },
+    sort: { field: "lead_source", order: "ASC" },
+    filter: { "lead_source@ilike": "quiz*" },
+  });
+  const set = new Set<string>();
+  (data ?? []).forEach((c: any) => {
+    if (isQuizSource(c.lead_source)) set.add(c.lead_source);
+  });
+  return Array.from(set).sort();
+};
+
+const leadFieldIcons = {
+  lead_source: <Megaphone />,
+  readiness: <Gauge />,
+  situation: <Compass />,
+  timeline: <Hourglass />,
+};
+
+const useTemperatureStatuses = () => {
+  const { noteStatuses } = useConfigurationContext();
+  return noteStatuses.filter((s) => temperatureValues.includes(s.value));
+};
 
 export const ContactListFilter = () => {
-  const { noteStatuses } = useConfigurationContext();
+  const noteStatuses = useTemperatureStatuses();
+  const quizSources = useQuizSources();
   const isMobile = useIsMobile();
   const { identity } = useGetIdentity();
   const translate = useTranslate();
@@ -33,6 +76,60 @@ export const ContactListFilter = () => {
         placeholder: translate("resources.contacts.filters.search"),
       }}
     >
+      {quizSources.length > 0 && (
+        <FilterCategory
+          label="resources.contacts.filters.lead_source"
+          icon={leadFieldIcons.lead_source}
+        >
+          {quizSources.map((source) => (
+            <ToggleFilterButton
+              key={source}
+              className="w-auto md:w-full justify-between h-10 md:h-8"
+              label={getQuizSourceLabel(source)}
+              value={{ lead_source: source }}
+              size={isMobile ? "lg" : undefined}
+            />
+          ))}
+        </FilterCategory>
+      )}
+
+      {leadFieldGroups.map((group) => (
+        <FilterCategory
+          key={group.key}
+          label={`resources.contacts.filters.${group.key}`}
+          icon={leadFieldIcons[group.key]}
+        >
+          {group.choices.map((choice) => (
+            <ToggleFilterButton
+              key={choice.id}
+              className="w-auto md:w-full justify-between h-10 md:h-8"
+              label={choice.name}
+              value={{ [group.key]: choice.id }}
+              size={isMobile ? "lg" : undefined}
+            />
+          ))}
+        </FilterCategory>
+      ))}
+
+      <FilterCategory
+        label="resources.contacts.filters.temperature"
+        icon={<Flame />}
+      >
+        {noteStatuses.map((status) => (
+          <ToggleFilterButton
+            key={status.value}
+            className="w-auto md:w-full justify-between h-10 md:h-8"
+            label={
+              <span>
+                {status.label} <Status status={status.value} />
+              </span>
+            }
+            value={{ status: status.value }}
+            size={isMobile ? "lg" : undefined}
+          />
+        ))}
+      </FilterCategory>
+
       <FilterCategory
         label="resources.contacts.fields.last_seen"
         icon={<Clock />}
@@ -85,25 +182,6 @@ export const ContactListFilter = () => {
           }}
           size={isMobile ? "lg" : undefined}
         />
-      </FilterCategory>
-
-      <FilterCategory
-        label="resources.notes.fields.status"
-        icon={<TrendingUp />}
-      >
-        {noteStatuses.map((status) => (
-          <ToggleFilterButton
-            key={status.value}
-            className="w-auto md:w-full justify-between h-10 md:h-8"
-            label={
-              <span>
-                {status.label} <Status status={status.value} />
-              </span>
-            }
-            value={{ status: status.value }}
-            size={isMobile ? "lg" : undefined}
-          />
-        ))}
       </FilterCategory>
 
       <FilterCategory label="resources.contacts.filters.tags" icon={<Tag />}>
@@ -161,7 +239,8 @@ export const ContactListFilter = () => {
 };
 
 export const ContactListFilterSummary = () => {
-  const { noteStatuses } = useConfigurationContext();
+  const noteStatuses = useTemperatureStatuses();
+  const quizSources = useQuizSources();
   const { identity } = useGetIdentity();
   const { data } = useGetList("tags", {
     pagination: { page: 1, perPage: 10 },
@@ -218,6 +297,26 @@ export const ContactListFilterSummary = () => {
           "last_seen@lte": subMonths(startOfMonth(new Date()), 1).toISOString(),
         }}
       />
+
+      {quizSources.map((source) => (
+        <ActiveFilterButton
+          key={`lead_source-${source}`}
+          className="w-auto justify-between h-8"
+          label={getQuizSourceLabel(source)}
+          value={{ lead_source: source }}
+        />
+      ))}
+
+      {leadFieldGroups.flatMap((group) =>
+        group.choices.map((choice) => (
+          <ActiveFilterButton
+            key={`${group.key}-${choice.id}`}
+            className="w-auto justify-between h-8"
+            label={choice.name}
+            value={{ [group.key]: choice.id }}
+          />
+        )),
+      )}
 
       {noteStatuses.map((status) => (
         <ActiveFilterButton

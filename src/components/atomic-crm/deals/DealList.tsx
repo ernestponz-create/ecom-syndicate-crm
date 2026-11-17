@@ -30,7 +30,7 @@ import { OnlyMineInput } from "./OnlyMineInput";
 
 const DealList = () => {
   const { identity } = useGetIdentity();
-  const { dealCategories } = useConfigurationContext();
+  const { dealCategories, dealStages } = useConfigurationContext();
   const translate = useTranslate();
   const { canAccess: canAccessSalesList, isPending } = useCanAccess({
     resource: "sales",
@@ -53,6 +53,16 @@ const DealList = () => {
         label={false}
         emptyText="resources.deals.fields.category"
         choices={dealCategories}
+        optionText="label"
+        optionValue="value"
+      />
+    </WrapperField>,
+    <WrapperField source="stage" label="resources.deals.fields.stage">
+      <SelectInput
+        source="stage"
+        label={false}
+        emptyText="resources.deals.fields.stage"
+        choices={dealStages}
         optionText="label"
         optionValue="value"
       />

@@ -148,6 +148,43 @@ async function ensureCompanyAndDeal(
   return { companyId, dealId: deal.id as number, createdDeal: true };
 }
 
+// ---- Normalized lead fields (see migration 20261117140000_lead_fields) ----
+// lead_source = slug of source_page ('quiz', 'quiz-v2', ...). Null when absent or not usable.
+function normLeadSource(sourcePage: string): string | null {
+  const slug = sourcePage
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+  return /^[a-z0-9][a-z0-9_-]*$/.test(slug) ? slug : null;
+}
+function normReadiness(v: string): string | null {
+  const r = v.toLowerCase().trim();
+  if (!r) return null;
+  if (r.startsWith("yes, i'm ready")) return "ready";
+  if (r.startsWith("yes")) return "details_first";
+  if (r.startsWith("not")) return "not_sure";
+  return null;
+}
+function normSituation(v: string): string | null {
+  const s = v.toLowerCase().split(" \u2014 ")[0];
+  if (!s.trim()) return null;
+  if (s.includes("not profitable")) return "not_profitable";
+  if (s.includes("don't have a store") || s.includes("no store"))
+    return "starting";
+  if (s.includes("profitable store")) return "profitable";
+  if (s.includes("different business")) return "other";
+  return null;
+}
+function normTimeline(v: string): string | null {
+  const t = v.toLowerCase().trim();
+  if (!t) return null;
+  if (t.startsWith("as soon as")) return "asap";
+  if (/1\D{1,3}3 months/.test(t)) return "1_3_months";
+  if (t.startsWith("just research") || t.includes("later")) return "later";
+  return null;
+}
+
 function statusFromReadiness(readiness: string): string {
   const r = readiness.toLowerCase();
   if (r.startsWith("yes, i'm ready")) return "hot";
@@ -267,9 +304,18 @@ Deno.serve(async (req) => {
   // Existing contact with this email? Add a note instead of creating a duplicate.
   const { data: existing } = await supabaseAdmin
     .from("contacts")
-    .select("id, tags")
+    .select("id, tags, lead_source")
     .contains("email_jsonb", JSON.stringify([{ email }]))
     .limit(1);
+
+  const leadFields: Record<string, string> = {};
+  for (const [k, v] of Object.entries({
+    readiness: normReadiness(readiness),
+    situation: normSituation(situation),
+    timeline: normTimeline(timeline),
+  })) {
+    if (v) leadFields[k] = v;
+  }
 
   let contactId: number;
   if (existing && existing.length > 0) {
@@ -277,9 +323,17 @@ Deno.serve(async (req) => {
     const tags: number[] = Array.from(
       new Set([...(existing[0].tags ?? []), ...tagIds]),
     );
+    // Latest answers win; an existing lead_source is never overwritten (first touch).
     await supabaseAdmin
       .from("contacts")
-      .update({ tags, last_seen: now })
+      .update({
+        tags,
+        last_seen: now,
+        ...leadFields,
+        ...(existing[0].lead_source || !normLeadSource(sourcePage)
+          ? {}
+          : { lead_source: normLeadSource(sourcePage) }),
+      })
       .eq("id", contactId);
   } else {
     const { data: contact, error } = await supabaseAdmin
@@ -296,6 +350,8 @@ Deno.serve(async (req) => {
         last_seen: now,
         has_newsletter: false,
         sales_id: salesId,
+        lead_source: normLeadSource(sourcePage),
+        ...leadFields,
       })
       .select("id")
       .single();

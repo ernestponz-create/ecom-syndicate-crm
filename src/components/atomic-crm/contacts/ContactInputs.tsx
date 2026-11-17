@@ -20,6 +20,7 @@ import { SimpleFormIterator } from "@/components/admin/simple-form-iterator";
 
 import { isLinkedinUrl } from "../misc/isLinkedInUrl";
 import { StatusSelector } from "../notes";
+import { leadFieldGroups } from "./leadFields";
 import type { Sale, Contact } from "../types";
 import { Avatar } from "./Avatar";
 import { AutocompleteCompanyInput } from "../companies/AutocompleteCompanyInput.tsx";
@@ -212,6 +213,17 @@ const ContactMiscInputs = () => {
         {translate("resources.contacts.field_categories.misc")}
       </h6>
       <TextInput source="background" multiline helperText={false} />
+      {leadFieldGroups.map((group) => (
+        <SelectInput
+          key={group.key}
+          source={group.key}
+          label={group.label}
+          choices={group.choices}
+          emptyText="-"
+          parse={(v: string) => v || null}
+          helperText={false}
+        />
+      ))}
       <BooleanInput source="has_newsletter" helperText={false} />
       <ReferenceInput
         reference="sales"

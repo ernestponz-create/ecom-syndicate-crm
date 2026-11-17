@@ -5,6 +5,9 @@ export const frenchCrmMessages = {
     companies: {
       name: "Entreprise |||| Entreprises",
       forcedCaseName: "Entreprise",
+      filters: {
+        pipeline: "Pipeline",
+      },
       fields: {
         name: "Nom de l'entreprise",
         website: "Site web",
@@ -171,6 +174,11 @@ export const frenchCrmMessages = {
         today: "Aujourd'hui",
         tags: "Étiquettes",
         tasks: "Tâches",
+        lead_source: "Source du lead",
+        readiness: "Disponibilité",
+        situation: "Situation",
+        timeline: "Délai",
+        temperature: "Température",
       },
       hot: {
         empty_change_status:
