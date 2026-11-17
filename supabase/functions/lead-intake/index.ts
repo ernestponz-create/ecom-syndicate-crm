@@ -26,7 +26,8 @@ function corsFor(req: Request): Record<string, string> {
       : ALLOWED_ORIGINS[0];
   return {
     "Access-Control-Allow-Origin": allow,
-    "Access-Control-Allow-Headers": "content-type, apikey, authorization, x-client-info",
+    "Access-Control-Allow-Headers":
+      "content-type, apikey, authorization, x-client-info",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Max-Age": "86400",
     Vary: "Origin",
@@ -41,11 +42,111 @@ function json(req: Request, status: number, body: Record<string, unknown>) {
 }
 
 const clean = (v: unknown, max: number) =>
-  typeof v === "string" ? v.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, max) : "";
+  typeof v === "string"
+    ? v
+        // eslint-disable-next-line no-control-regex
+        .replace(/[\u0000-\u001f\u007f]/g, " ")
+        .trim()
+        .slice(0, max)
+    : "";
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const TAG_NAME = "Landing page / Meta ads";
 const TAG_COLOR = "#e8cb7d";
+const QUIZ_TAG_NAME = "Quiz";
+const QUIZ_TAG_COLOR = "#b4a7d6";
+const OPEN_EXCLUDED_STAGES = ["won", "lost"];
+
+async function getOrCreateTag(name: string, color: string): Promise<number> {
+  const { data, error } = await supabaseAdmin
+    .from("tags")
+    .select("id")
+    .eq("name", name)
+    .limit(1);
+  if (error) throw error;
+  if (data?.[0]) return data[0].id as number;
+  const { data: created, error: e2 } = await supabaseAdmin
+    .from("tags")
+    .insert({ name, color })
+    .select("id")
+    .single();
+  if (e2) throw e2;
+  return created.id as number;
+}
+
+// Put a deal at the top of a kanban column, like the CRM UI does.
+async function moveToTop(stage: string) {
+  const { data } = await supabaseAdmin
+    .from("deals")
+    .select("id, index")
+    .eq("stage", stage);
+  for (const d of data ?? []) {
+    await supabaseAdmin
+      .from("deals")
+      .update({ index: (d.index ?? 0) + 1 })
+      .eq("id", d.id);
+  }
+}
+
+// Makes sure the contact has a company and an open deal (new-lead for fresh leads).
+// Reuses what exists, never creates a second open deal for the same contact.
+async function ensureCompanyAndDeal(
+  contactId: number,
+  fullName: string,
+  isQuiz: boolean,
+  salesId: number | null,
+  description: string,
+) {
+  const { data: c } = await supabaseAdmin
+    .from("contacts")
+    .select("company_id")
+    .eq("id", contactId)
+    .single();
+  let companyId: number | null = c?.company_id ?? null;
+  if (!companyId) {
+    const { data: company, error } = await supabaseAdmin
+      .from("companies")
+      .insert({
+        name: `${fullName} (individual)`,
+        description: `Created automatically from a ${isQuiz ? "quiz" : "landing page"} lead.`,
+        sales_id: salesId,
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+    companyId = company.id as number;
+    await supabaseAdmin
+      .from("contacts")
+      .update({ company_id: companyId })
+      .eq("id", contactId);
+  }
+  const { data: open } = await supabaseAdmin
+    .from("deals")
+    .select("id")
+    .contains("contact_ids", [contactId])
+    .is("archived_at", null)
+    .not("stage", "in", `(${OPEN_EXCLUDED_STAGES.join(",")})`)
+    .limit(1);
+  if (open?.[0])
+    return { companyId, dealId: open[0].id as number, createdDeal: false };
+  await moveToTop("new-lead");
+  const { data: deal, error } = await supabaseAdmin
+    .from("deals")
+    .insert({
+      name: `${fullName} - ${isQuiz ? "quiz lead" : "new lead"}`,
+      company_id: companyId,
+      contact_ids: [contactId],
+      category: "managed-ecommerce-retainer",
+      stage: "new-lead",
+      description,
+      index: 0,
+      sales_id: salesId,
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+  return { companyId, dealId: deal.id as number, createdDeal: true };
+}
 
 function statusFromReadiness(readiness: string): string {
   const r = readiness.toLowerCase();
@@ -88,8 +189,15 @@ Deno.serve(async (req) => {
   const sourcePage = clean(body.source_page, 300);
   const consent = clean(body.consent, 100);
 
-  if (!fullName || !EMAIL_RE.test(email) || phone.replace(/\D/g, "").length < 10) {
-    return json(req, 422, { success: false, message: "Please provide a valid name, email and phone number." });
+  if (
+    !fullName ||
+    !EMAIL_RE.test(email) ||
+    phone.replace(/\D/g, "").length < 10
+  ) {
+    return json(req, 422, {
+      success: false,
+      message: "Please provide a valid name, email and phone number.",
+    });
   }
 
   const parts = fullName.split(/\s+/);
@@ -98,28 +206,53 @@ Deno.serve(async (req) => {
   const now = new Date().toISOString();
 
   const { data: tagRows, error: tagErr } = await supabaseAdmin
-    .from("tags").select("id").eq("name", TAG_NAME).limit(1);
-  if (tagErr) return json(req, 500, { success: false, message: "Server error" });
+    .from("tags")
+    .select("id")
+    .eq("name", TAG_NAME)
+    .limit(1);
+  if (tagErr)
+    return json(req, 500, { success: false, message: "Server error" });
   let tagId = tagRows?.[0]?.id as number | undefined;
   if (!tagId) {
     const { data: created, error } = await supabaseAdmin
-      .from("tags").insert({ name: TAG_NAME, color: TAG_COLOR }).select("id").single();
-    if (error) return json(req, 500, { success: false, message: "Server error" });
+      .from("tags")
+      .insert({ name: TAG_NAME, color: TAG_COLOR })
+      .select("id")
+      .single();
+    if (error)
+      return json(req, 500, { success: false, message: "Server error" });
     tagId = created.id;
+  }
+  const isQuiz = sourcePage.toLowerCase() === "quiz";
+  const tagIds: number[] = [tagId!];
+  if (isQuiz) {
+    try {
+      tagIds.push(await getOrCreateTag(QUIZ_TAG_NAME, QUIZ_TAG_COLOR));
+    } catch (e) {
+      console.error("quiz tag failed", String(e));
+    }
   }
 
   // Simple flood protection: at most 30 landing-page submissions per 10 minutes.
   const since = new Date(Date.now() - 10 * 60 * 1000).toISOString();
   const { count } = await supabaseAdmin
-    .from("contact_notes").select("id", { count: "exact", head: true })
-    .gte("date", since).like("text", "Landing page form submission%");
+    .from("contact_notes")
+    .select("id", { count: "exact", head: true })
+    .gte("date", since)
+    .like("text", "Landing page form submission%");
   if ((count ?? 0) >= 30) {
-    return json(req, 429, { success: false, message: "Too many submissions, please try again later." });
+    return json(req, 429, {
+      success: false,
+      message: "Too many submissions, please try again later.",
+    });
   }
 
   // First sales user, if any (lowest id = the admin who signed up first).
   const { data: sales } = await supabaseAdmin
-    .from("sales").select("id").order("id", { ascending: true }).limit(1);
+    .from("sales")
+    .select("id")
+    .order("id", { ascending: true })
+    .limit(1);
   const salesId: number | null = sales?.[0]?.id ?? null;
 
   const noteText =
@@ -133,14 +266,21 @@ Deno.serve(async (req) => {
 
   // Existing contact with this email? Add a note instead of creating a duplicate.
   const { data: existing } = await supabaseAdmin
-    .from("contacts").select("id, tags")
-    .contains("email_jsonb", JSON.stringify([{ email }])).limit(1);
+    .from("contacts")
+    .select("id, tags")
+    .contains("email_jsonb", JSON.stringify([{ email }]))
+    .limit(1);
 
   let contactId: number;
   if (existing && existing.length > 0) {
     contactId = existing[0].id;
-    const tags: number[] = Array.from(new Set([...(existing[0].tags ?? []), tagId]));
-    await supabaseAdmin.from("contacts").update({ tags, last_seen: now }).eq("id", contactId);
+    const tags: number[] = Array.from(
+      new Set([...(existing[0].tags ?? []), ...tagIds]),
+    );
+    await supabaseAdmin
+      .from("contacts")
+      .update({ tags, last_seen: now })
+      .eq("id", contactId);
   } else {
     const { data: contact, error } = await supabaseAdmin
       .from("contacts")
@@ -151,13 +291,14 @@ Deno.serve(async (req) => {
         phone_jsonb: [{ number: phone, type: "Work" }],
         background: `Landing page lead. Situation: ${situation || "n/a"}. Timeline: ${timeline || "n/a"}.`,
         status: statusFromReadiness(readiness),
-        tags: [tagId],
+        tags: tagIds,
         first_seen: now,
         last_seen: now,
         has_newsletter: false,
         sales_id: salesId,
       })
-      .select("id").single();
+      .select("id")
+      .single();
     if (error) {
       console.error("contact insert failed", error.message);
       return json(req, 500, { success: false, message: "Server error" });
@@ -181,6 +322,19 @@ Deno.serve(async (req) => {
     due_date: due,
     sales_id: salesId,
   });
+
+  // Company + open deal in "New lead". Failure here must not lose the lead.
+  try {
+    await ensureCompanyAndDeal(
+      contactId,
+      fullName,
+      isQuiz,
+      salesId,
+      `${isQuiz ? "Quiz" : "Landing page"} lead. Situation: ${situation || "n/a"}. Readiness: ${readiness || "n/a"}. Timeline: ${timeline || "n/a"}.`,
+    );
+  } catch (e) {
+    console.error("company/deal creation failed", String(e));
+  }
 
   return json(req, 200, { success: true });
 });
