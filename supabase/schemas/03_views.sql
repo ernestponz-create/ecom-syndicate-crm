@@ -126,7 +126,12 @@ select
     co.readiness,
     co.situation,
     co.timeline,
-    co.goal
+    co.goal,
+    co.utm_source,
+    co.utm_medium,
+    co.utm_campaign,
+    co.utm_content,
+    co.utm_term
 from public.contacts co
     left join public.tasks t on co.id = t.contact_id
     left join public.companies c on co.company_id = c.id

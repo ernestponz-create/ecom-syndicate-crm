@@ -101,6 +101,11 @@ export const generateContacts = (db: Db, size = 500): Required<Contact>[] => {
       situation: null,
       timeline: null,
       goal: null,
+      utm_source: null,
+      utm_medium: null,
+      utm_campaign: null,
+      utm_content: null,
+      utm_term: null,
     };
   });
 };

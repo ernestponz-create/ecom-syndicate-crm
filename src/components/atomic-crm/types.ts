@@ -108,6 +108,11 @@ export type Contact = {
   situation?: string | null;
   timeline?: string | null;
   goal?: string | null;
+  utm_source?: string | null;
+  utm_medium?: string | null;
+  utm_campaign?: string | null;
+  utm_content?: string | null;
+  utm_term?: string | null;
 } & Pick<RaRecord, "id">;
 
 export type ContactNote = {

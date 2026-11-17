@@ -1,3 +1,7 @@
+## Unreleased - fork changes
+
+* Show ad tracking (UTM source, medium, campaign, ad, keyword) read-only on the contact page; saved by lead-intake into new `utm_*` columns on contacts, exposed through `contacts_summary`
+
 ## v1.6.0 - 2026-09-22
 
 ## What's Changed

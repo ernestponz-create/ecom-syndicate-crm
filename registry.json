@@ -710,6 +710,10 @@
           "type": "registry:component"
         },
         {
+          "path": "src/components/atomic-crm/contacts/leadFields.ts",
+          "type": "registry:component"
+        },
+        {
           "path": "src/components/atomic-crm/contacts/index.tsx",
           "type": "registry:component"
         },
@@ -755,6 +759,10 @@
         },
         {
           "path": "src/components/atomic-crm/contacts/ContactList.tsx",
+          "type": "registry:component"
+        },
+        {
+          "path": "src/components/atomic-crm/contacts/ContactLeadInfo.tsx",
           "type": "registry:component"
         },
         {
