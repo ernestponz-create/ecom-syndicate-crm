@@ -178,6 +178,7 @@ export const frenchCrmMessages = {
         readiness: "Disponibilité",
         situation: "Situation",
         timeline: "Délai",
+        goal: "Objectif principal",
         temperature: "Température",
       },
       hot: {

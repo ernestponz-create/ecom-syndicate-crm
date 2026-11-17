@@ -7,6 +7,7 @@ import {
   Gauge,
   Hourglass,
   Megaphone,
+  Target,
   Tag,
   Users,
 } from "lucide-react";
@@ -52,6 +53,7 @@ const leadFieldIcons = {
   readiness: <Gauge />,
   situation: <Compass />,
   timeline: <Hourglass />,
+  goal: <Target />,
 };
 
 const useTemperatureStatuses = () => {

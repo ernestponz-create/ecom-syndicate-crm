@@ -176,6 +176,16 @@ function normSituation(v: string): string | null {
   if (s.includes("different business")) return "other";
   return null;
 }
+function normGoal(v: string): string | null {
+  // The quiz sends situation as "<situation> \u2014 goal: <goal>".
+  const m = v.toLowerCase().match(/goal:\s*(.*)$/);
+  const g = m ? m[1] : "";
+  if (g.startsWith("launch my first")) return "launch";
+  if (g.startsWith("fix and grow")) return "fix_grow";
+  if (g.startsWith("scale what")) return "scale";
+  if (g.startsWith("add ecommerce")) return "add_ecom";
+  return null;
+}
 function normTimeline(v: string): string | null {
   const t = v.toLowerCase().trim();
   if (!t) return null;
@@ -313,6 +323,7 @@ Deno.serve(async (req) => {
     readiness: normReadiness(readiness),
     situation: normSituation(situation),
     timeline: normTimeline(timeline),
+    goal: normGoal(situation),
   })) {
     if (v) leadFields[k] = v;
   }

@@ -4,7 +4,8 @@ export type LeadFieldKey =
   | "lead_source"
   | "readiness"
   | "situation"
-  | "timeline";
+  | "timeline"
+  | "goal";
 
 export type LeadFieldChoice = { id: string; name: string };
 
@@ -17,23 +18,33 @@ export const getQuizSourceLabel = (v: string): string => {
   return text.charAt(0).toUpperCase() + text.slice(1);
 };
 
+// Labels use the exact option wording of the quiz questions (quiz.js), so the filters mirror
+// what the lead actually clicked. Readiness is the quiz's 4th question ("Ready to work with a
+// done-for-you team and fund your own ad spend?").
 export const readinessChoices: LeadFieldChoice[] = [
-  { id: "ready", name: "Ready now" },
-  { id: "details_first", name: "Wants details first" },
-  { id: "not_sure", name: "Not sure yet" },
+  { id: "ready", name: "Yes, I'm ready" },
+  { id: "details_first", name: "Yes, I'd like details first" },
+  { id: "not_sure", name: "Not yet" },
 ];
 
 export const situationChoices: LeadFieldChoice[] = [
-  { id: "starting", name: "Starting from scratch" },
-  { id: "not_profitable", name: "Has store, not profitable" },
-  { id: "profitable", name: "Profitable, wants to scale" },
-  { id: "other", name: "Different business" },
+  { id: "starting", name: "I don't have a store yet" },
+  { id: "not_profitable", name: "I have a store, but it's not profitable yet" },
+  { id: "profitable", name: "I have a profitable store" },
+  { id: "other", name: "I run a different business" },
+];
+
+export const goalChoices: LeadFieldChoice[] = [
+  { id: "launch", name: "Launch my first ecommerce store" },
+  { id: "fix_grow", name: "Fix and grow my current store" },
+  { id: "scale", name: "Scale what's already working" },
+  { id: "add_ecom", name: "Add ecommerce to my business" },
 ];
 
 export const timelineChoices: LeadFieldChoice[] = [
-  { id: "asap", name: "ASAP" },
-  { id: "1_3_months", name: "1–3 months" },
-  { id: "later", name: "Later" },
+  { id: "asap", name: "As soon as possible" },
+  { id: "1_3_months", name: "In 1–3 months" },
+  { id: "later", name: "Just researching" },
 ];
 
 export const leadFieldGroups: {
@@ -43,6 +54,7 @@ export const leadFieldGroups: {
 }[] = [
   { key: "readiness", label: "Readiness", choices: readinessChoices },
   { key: "situation", label: "Situation", choices: situationChoices },
+  { key: "goal", label: "Main goal", choices: goalChoices },
   { key: "timeline", label: "Timeline", choices: timelineChoices },
 ];
 

@@ -53,7 +53,8 @@ create table public.contacts (
     lead_source text,
     readiness text,
     situation text,
-    timeline text
+    timeline text,
+    goal text
 );
 
 create table public.contact_notes (

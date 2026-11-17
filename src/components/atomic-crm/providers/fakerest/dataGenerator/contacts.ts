@@ -100,6 +100,7 @@ export const generateContacts = (db: Db, size = 500): Required<Contact>[] => {
       readiness: null,
       situation: null,
       timeline: null,
+      goal: null,
     };
   });
 };

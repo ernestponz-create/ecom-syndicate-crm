@@ -107,6 +107,7 @@ export type Contact = {
   readiness?: string | null;
   situation?: string | null;
   timeline?: string | null;
+  goal?: string | null;
 } & Pick<RaRecord, "id">;
 
 export type ContactNote = {

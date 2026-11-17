@@ -125,7 +125,8 @@ select
     co.lead_source,
     co.readiness,
     co.situation,
-    co.timeline
+    co.timeline,
+    co.goal
 from public.contacts co
     left join public.tasks t on co.id = t.contact_id
     left join public.companies c on co.company_id = c.id

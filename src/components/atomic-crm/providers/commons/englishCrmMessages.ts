@@ -174,6 +174,7 @@ export const englishCrmMessages = {
         readiness: "Readiness",
         situation: "Situation",
         timeline: "Timeline",
+        goal: "Main goal",
         temperature: "Temperature",
       },
       hot: {
