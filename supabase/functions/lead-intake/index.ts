@@ -57,6 +57,40 @@ const QUIZ_TAG_NAME = "Quiz";
 const QUIZ_TAG_COLOR = "#b4a7d6";
 const OPEN_EXCLUDED_STAGES = ["won", "lost"];
 
+// ---- UTM attribution ----
+// Accepts top-level utm_source/... keys, or a nested "utm" object ({ utm_source } or { source }).
+// Top-level keys win. Each value is trimmed and truncated to 255 chars; empty -> not saved.
+const UTM_KEYS = [
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+  "utm_content",
+  "utm_term",
+] as const;
+const utmClean = (v: unknown): string | null => {
+  if (typeof v !== "string") return null;
+  const t = v
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .trim()
+    .slice(0, 255)
+    .trim();
+  return t || null;
+};
+function extractUtms(body: Record<string, unknown>): Record<string, string> {
+  const nested =
+    body.utm && typeof body.utm === "object" && !Array.isArray(body.utm)
+      ? (body.utm as Record<string, unknown>)
+      : {};
+  const out: Record<string, string> = {};
+  for (const k of UTM_KEYS) {
+    const v =
+      utmClean(body[k]) ?? utmClean(nested[k]) ?? utmClean(nested[k.slice(4)]);
+    if (v) out[k] = v;
+  }
+  return out;
+}
+
 async function getOrCreateTag(name: string, color: string): Promise<number> {
   const { data, error } = await supabaseAdmin
     .from("tags")
@@ -235,6 +269,7 @@ Deno.serve(async (req) => {
   const timeline = clean(body.timeline, 200);
   const sourcePage = clean(body.source_page, 300);
   const consent = clean(body.consent, 100);
+  const utms = extractUtms(body);
 
   if (
     !fullName ||
@@ -341,6 +376,10 @@ Deno.serve(async (req) => {
         tags,
         last_seen: now,
         ...leadFields,
+        // UTMs: only when this submission carries some; then the full set is replaced (latest touch wins).
+        ...(Object.keys(utms).length
+          ? Object.fromEntries(UTM_KEYS.map((k) => [k, utms[k] ?? null]))
+          : {}),
         ...(existing[0].lead_source || !normLeadSource(sourcePage)
           ? {}
           : { lead_source: normLeadSource(sourcePage) }),
@@ -363,6 +402,7 @@ Deno.serve(async (req) => {
         sales_id: salesId,
         lead_source: normLeadSource(sourcePage),
         ...leadFields,
+        ...utms,
       })
       .select("id")
       .single();
