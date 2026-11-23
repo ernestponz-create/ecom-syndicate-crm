@@ -1,4 +1,5 @@
 import { LeadMetrics } from "./LeadMetrics";
+import { PushNotificationsCard } from "./PushNotificationsCard";
 import MobileHeader from "../layout/MobileHeader";
 import { MobileContent } from "../layout/MobileContent";
 import { useConfigurationContext } from "../root/ConfigurationContext";
@@ -31,6 +32,7 @@ export const MobileDashboard = () => (
   <Wrapper>
     <div className="mt-1">
       <LeadMetrics />
+      <PushNotificationsCard />
     </div>
   </Wrapper>
 );
