@@ -23,7 +23,6 @@ import { StatusSelector } from "../notes";
 import { leadFieldGroups } from "./leadFields";
 import type { Sale, Contact } from "../types";
 import { Avatar } from "./Avatar";
-import { AutocompleteCompanyInput } from "../companies/AutocompleteCompanyInput.tsx";
 import {
   contactGender,
   translateContactGenderLabel,
@@ -87,9 +86,6 @@ const ContactPositionInputs = () => {
         {translate("resources.contacts.field_categories.position")}
       </h6>
       <TextInput source="title" helperText={false} />
-      <ReferenceInput source="company_id" reference="companies" perPage={10}>
-        <AutocompleteCompanyInput label="resources.contacts.fields.company_id" />
-      </ReferenceInput>
     </div>
   );
 };
