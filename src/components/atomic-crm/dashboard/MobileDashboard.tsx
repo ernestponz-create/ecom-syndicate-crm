@@ -1,11 +1,4 @@
-import { useGetList, useTimeout } from "ra-core";
-import { Skeleton } from "@/components/ui/skeleton";
-
-import type { Contact } from "../types";
-import { DashboardActivityLog } from "./DashboardActivityLog";
-import { DashboardStepper } from "./DashboardStepper";
 import { LeadMetrics } from "./LeadMetrics";
-import { Welcome } from "./Welcome";
 import MobileHeader from "../layout/MobileHeader";
 import { MobileContent } from "../layout/MobileContent";
 import { useConfigurationContext } from "../root/ConfigurationContext";
@@ -34,44 +27,10 @@ const Wrapper = ({ children }: { children: React.ReactNode }) => {
   );
 };
 
-const Loading = () => (
+export const MobileDashboard = () => (
   <Wrapper>
-    <Skeleton className="h-4 w-3/4 mb-4" />
-    <Skeleton className="h-4 w-full mb-2" />
-    <Skeleton className="h-4 w-full mb-2" />
-    <Skeleton className="h-4 w-full mb-2" />
-    <Skeleton className="h-4 w-full mb-2" />
+    <div className="mt-1">
+      <LeadMetrics />
+    </div>
   </Wrapper>
 );
-
-export const MobileDashboard = () => {
-  const { total: totalContact, isPending: isPendingContact } =
-    useGetList<Contact>("contacts", {
-      pagination: { page: 1, perPage: 1 },
-    });
-  const oneSecondHasPassed = useTimeout(1000);
-
-  const isPending = isPendingContact;
-
-  if (isPending) {
-    return oneSecondHasPassed ? <Loading /> : null;
-  }
-
-  if (!totalContact) {
-    return (
-      <Wrapper>
-        <DashboardStepper step={1} />
-      </Wrapper>
-    );
-  }
-
-  return (
-    <Wrapper>
-      <div className="flex flex-col gap-6 mt-1">
-        <LeadMetrics />
-        {import.meta.env.VITE_IS_DEMO === "true" ? <Welcome /> : null}
-        <DashboardActivityLog />
-      </div>
-    </Wrapper>
-  );
-};
