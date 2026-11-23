@@ -440,6 +440,10 @@ export const englishCrmMessages = {
         whats_next: "What's next?",
       },
       upcoming_tasks: "Upcoming Tasks",
+      leads_today: "Leads today",
+      leads_this_week: "Leads this week",
+      no_notes_today: "% without notes today",
+      no_notes_this_week: "% without notes this week",
     },
     data_import: {
       button: "Import CSV",

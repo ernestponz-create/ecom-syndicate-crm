@@ -666,6 +666,10 @@
           "type": "registry:component"
         },
         {
+          "path": "src/components/atomic-crm/dashboard/leadMetrics.ts",
+          "type": "registry:component"
+        },
+        {
           "path": "src/components/atomic-crm/dashboard/Welcome.tsx",
           "type": "registry:component"
         },
@@ -675,6 +679,10 @@
         },
         {
           "path": "src/components/atomic-crm/dashboard/MobileDashboard.tsx",
+          "type": "registry:component"
+        },
+        {
+          "path": "src/components/atomic-crm/dashboard/LeadMetrics.tsx",
           "type": "registry:component"
         },
         {

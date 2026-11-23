@@ -1,9 +1,10 @@
 import { useGetList, useTimeout } from "ra-core";
 import { Skeleton } from "@/components/ui/skeleton";
 
-import type { Contact, ContactNote } from "../types";
+import type { Contact } from "../types";
 import { DashboardActivityLog } from "./DashboardActivityLog";
 import { DashboardStepper } from "./DashboardStepper";
+import { LeadMetrics } from "./LeadMetrics";
 import { Welcome } from "./Welcome";
 import MobileHeader from "../layout/MobileHeader";
 import { MobileContent } from "../layout/MobileContent";
@@ -44,20 +45,13 @@ const Loading = () => (
 );
 
 export const MobileDashboard = () => {
-  const {
-    data: dataContact,
-    total: totalContact,
-    isPending: isPendingContact,
-  } = useGetList<Contact>("contacts", {
-    pagination: { page: 1, perPage: 1 },
-  });
-  const { total: totalContactNotes, isPending: isPendingContactNotes } =
-    useGetList<ContactNote>("contact_notes", {
+  const { total: totalContact, isPending: isPendingContact } =
+    useGetList<Contact>("contacts", {
       pagination: { page: 1, perPage: 1 },
     });
   const oneSecondHasPassed = useTimeout(1000);
 
-  const isPending = isPendingContact || isPendingContactNotes;
+  const isPending = isPendingContact;
 
   if (isPending) {
     return oneSecondHasPassed ? <Loading /> : null;
@@ -71,17 +65,10 @@ export const MobileDashboard = () => {
     );
   }
 
-  if (!totalContactNotes) {
-    return (
-      <Wrapper>
-        <DashboardStepper step={2} contactId={dataContact?.[0]?.id} />
-      </Wrapper>
-    );
-  }
-
   return (
     <Wrapper>
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-6 mt-1">
+      <div className="flex flex-col gap-6 mt-1">
+        <LeadMetrics />
         {import.meta.env.VITE_IS_DEMO === "true" ? <Welcome /> : null}
         <DashboardActivityLog />
       </div>

@@ -446,6 +446,10 @@ export const frenchCrmMessages = {
         whats_next: "Et ensuite ?",
       },
       upcoming_tasks: "Tâches à venir",
+      leads_today: "Prospects aujourd'hui",
+      leads_this_week: "Prospects cette semaine",
+      no_notes_today: "% sans notes aujourd'hui",
+      no_notes_this_week: "% sans notes cette semaine",
     },
     data_import: {
       button: "Importer un fichier CSV",
