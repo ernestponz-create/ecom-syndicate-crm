@@ -18,6 +18,7 @@ import { useConfigurationContext } from "../root/ConfigurationContext";
 import type { Company } from "../types";
 import { getTranslatedCompanySizeLabel } from "./getTranslatedCompanySizeLabel";
 import { sizes } from "./sizes";
+import { PhoneLink } from "../misc/PhoneLink";
 import { useGetSalesName } from "../sales/useGetSalesName";
 
 interface CompanyAsideProps {
@@ -99,7 +100,7 @@ export const CompanyInfo = ({ record }: { record: Company }) => {
       {record.phone_number && (
         <div className="flex flex-row items-center gap-1 min-h-[24px]">
           <Phone className="w-4 h-4" />
-          <TextField source="phone_number" />
+          <PhoneLink source="phone_number" />
         </div>
       )}
     </AsideSection>

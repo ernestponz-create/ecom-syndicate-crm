@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useRecordContext, useTranslate, WithRecord } from "ra-core";
 import { ArrayField } from "@/components/admin/array-field";
 import { SingleFieldList } from "@/components/admin/single-field-list";
-import { TextField } from "@/components/admin/text-field";
 import { EmailField } from "@/components/admin/email-field";
 import { Mail, Phone, Linkedin, Check } from "lucide-react";
 import type { ReactNode } from "react";
@@ -12,6 +11,7 @@ import {
   translatePersonalInfoTypeLabel,
 } from "./contactModel";
 import type { Contact } from "../types";
+import { PhoneLink } from "../misc/PhoneLink";
 
 export const ContactPersonalInfo = () => {
   const record = useRecordContext<Contact>();
@@ -53,7 +53,7 @@ export const ContactPersonalInfo = () => {
         <SingleFieldList className="flex-col gap-y-0">
           <PersonalInfoRow
             icon={<Phone className="w-4 h-4 text-muted-foreground" />}
-            primary={<TextField source="number" />}
+            primary={<PhoneLink source="number" />}
             showType
           />
         </SingleFieldList>

@@ -20,6 +20,8 @@ import { formatRelativeDate } from "../misc/RelativeDate";
 import type { Contact } from "../types";
 import { Avatar } from "./Avatar";
 import { TagsList } from "./TagsList";
+import { PhoneLink } from "../misc/PhoneLink";
+import { getPrimaryPhoneNumber } from "../misc/formatPhoneToE164";
 
 export const ContactListContent = () => {
   const translate = useTranslate();
@@ -159,6 +161,7 @@ const ContactItemContent = ({
           </div>
         )}
       </Link>
+      <ContactListPhone contact={contact} />
     </div>
   );
 };
@@ -238,33 +241,46 @@ export const ContactListContentMobile = () => {
 const ContactItemContentMobile = ({ contact }: { contact: Contact }) => {
   const translate = useTranslate();
   return (
-    <Link
-      to={`/contacts/${contact.id}/show`}
-      className="flex flex-row gap-4 items-center py-2 hover:bg-muted transition-colors"
-    >
-      <Avatar />
-      <div className="flex flex-col grow justify-between">
-        <div className="flex-1 min-w-0">
-          <div className="flex justify-between">
-            <div className="font-medium">
-              <RecordRepresentation />
+    <div className="flex flex-row gap-4 items-center py-2 hover:bg-muted transition-colors">
+      <Link
+        to={`/contacts/${contact.id}/show`}
+        className="flex flex-row gap-4 items-center flex-1 min-w-0"
+      >
+        <Avatar />
+        <div className="flex flex-col grow justify-between min-w-0">
+          <div className="flex-1 min-w-0">
+            <div className="flex justify-between">
+              <div className="font-medium">
+                <RecordRepresentation />
+              </div>
+              <Status status={contact.status} />
             </div>
-            <Status status={contact.status} />
-          </div>
-          <div className="text-sm text-muted-foreground">
-            <div className="flex flex-col gap-1">
-              <span>{contact.title}</span>
-              {contact.nb_tasks ? (
-                <span>
-                  {translate("crm.common.task_count", {
-                    smart_count: contact.nb_tasks,
-                  })}
-                </span>
-              ) : null}
+            <div className="text-sm text-muted-foreground">
+              <div className="flex flex-col gap-1">
+                <span>{contact.title}</span>
+                {contact.nb_tasks ? (
+                  <span>
+                    {translate("crm.common.task_count", {
+                      smart_count: contact.nb_tasks,
+                    })}
+                  </span>
+                ) : null}
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    </Link>
+      </Link>
+      <ContactListPhone contact={contact} />
+    </div>
+  );
+};
+
+const ContactListPhone = ({ contact }: { contact: Contact }) => {
+  const number = getPrimaryPhoneNumber(contact.phone_jsonb);
+  if (!number) return null;
+  return (
+    <div className="shrink-0 text-sm pr-2">
+      <PhoneLink number={number} className="text-sm" />
+    </div>
   );
 };
