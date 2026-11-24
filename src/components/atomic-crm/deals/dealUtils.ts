@@ -39,8 +39,29 @@ function ucFirst(str: string): string {
 
 const isoDateStringRegex = /^\d{4}-\d{2}-\d{2}$/;
 
+export function isIsoDateString(value: unknown): value is string {
+  return typeof value === "string" && isoDateStringRegex.test(value);
+}
+
+export function formatDealAmount(
+  amount: number | null | undefined,
+  currency: string,
+  empty = "—",
+): string {
+  if (amount == null || Number.isNaN(Number(amount))) {
+    return empty;
+  }
+  return Number(amount).toLocaleString("en-US", {
+    notation: "compact",
+    style: "currency",
+    currency,
+    currencyDisplay: "narrowSymbol",
+    minimumSignificantDigits: 3,
+  });
+}
+
 export function formatISODateString(dateString: string) {
-  if (!isoDateStringRegex.test(dateString)) {
+  if (!isIsoDateString(dateString)) {
     throw new Error("Invalid date format. Expected YYYY-MM-DD.");
   }
   // Some browsers will consider a date in the format YYYY-MM-DD as UTC, which can cause off-by-one-day issues depending on the user's timezone.

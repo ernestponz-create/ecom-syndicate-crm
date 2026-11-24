@@ -57,23 +57,27 @@ export const DealCardContent = ({
               <p className="flex-1 text-sm font-medium mb-2">{deal.name}</p>
             </div>
             <p className="text-xs text-muted-foreground">
-              <NumberField
-                source="amount"
-                options={{
-                  notation: "compact",
-                  style: "currency",
-                  currency,
-                  currencyDisplay: "narrowSymbol",
-                  minimumSignificantDigits: 3,
-                }}
-              />
-              {deal.category && ", "}
-              <SelectField
-                source="category"
-                choices={dealCategories}
-                optionText="label"
-                optionValue="value"
-              />
+              {deal.amount != null && (
+                <NumberField
+                  source="amount"
+                  options={{
+                    notation: "compact",
+                    style: "currency",
+                    currency,
+                    currencyDisplay: "narrowSymbol",
+                    minimumSignificantDigits: 3,
+                  }}
+                />
+              )}
+              {deal.amount != null && deal.category ? ", " : null}
+              {deal.category ? (
+                <SelectField
+                  source="category"
+                  choices={dealCategories}
+                  optionText="label"
+                  optionValue="value"
+                />
+              ) : null}
             </p>
           </CardContent>
         </Card>

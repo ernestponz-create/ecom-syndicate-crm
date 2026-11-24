@@ -4,7 +4,7 @@ import { Link } from "react-router";
 import { Card } from "@/components/ui/card";
 
 import { SimpleList } from "../simple-list/SimpleList";
-import { findDealLabel } from "../deals/dealUtils";
+import { findDealLabel, formatDealAmount } from "../deals/dealUtils";
 import { useConfigurationContext } from "../root/ConfigurationContext";
 import type { Deal } from "../types";
 
@@ -63,15 +63,11 @@ export const DealsPipeline = () => {
           total={total}
           isPending={isPending}
           primaryText={(deal) => deal.name}
-          secondaryText={(deal) =>
-            `${deal.amount.toLocaleString("en-US", {
-              notation: "compact",
-              style: "currency",
-              currency,
-              currencyDisplay: "narrowSymbol",
-              minimumSignificantDigits: 3,
-            })} , ${findDealLabel(dealStages, deal.stage)}`
-          }
+          secondaryText={(deal) => {
+            const amount = formatDealAmount(deal.amount, currency, "");
+            const stage = findDealLabel(dealStages, deal.stage);
+            return [amount, stage].filter(Boolean).join(", ");
+          }}
         />
       </Card>
     </>
