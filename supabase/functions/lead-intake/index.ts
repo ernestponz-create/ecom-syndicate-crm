@@ -8,9 +8,22 @@
 //    sales_id stays NULL and the adopt_orphan_records trigger (see migration) attaches
 //    everything to the first user who signs up.
 //
+// Attribution + Meta CAPI (2026-11-27): see the 'Attribution' block below and _shared/metaCapi.ts.
+// Instant-form leads from the Meta CSV pulls may also send the CSV columns (id, created_time, ad_id,
+// ad_name, adset_id, adset_name, campaign_id, campaign_name, form_id, form_name, platform, is_organic).
+// A repeated Meta lead id is acknowledged with { success, duplicate: true } and nothing is written.
+//
 // SECURITY TODO: CORS currently allows any origin. Once the GitHub Pages domain is final, set the
 // ALLOWED_ORIGINS secret (comma separated, e.g. https://ernestponz-create.github.io) to restrict it.
 import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
+import {
+  buildUserData,
+  fbcFrom,
+  isTestEmail,
+  LEAD_EVENT_SOURCE,
+  normPhone,
+  sendCapi,
+} from "../_shared/metaCapi.ts";
 
 const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") ?? "*")
   .split(",")
@@ -236,6 +249,125 @@ function statusFromReadiness(readiness: string): string {
   return "cold";
 }
 
+// ---- Attribution (migration 20261127160000_attribution_capi) ----
+// Website/quiz: event_id, fbc, fbp, fbclid, utm_id, page_url, landing_url, referrer, submitted_at,
+//   first_touch (browser localStorage first touch), plus utm_*.
+// Meta instant forms (pull routines, CSV columns): id|meta_lead_id|leadgen_id ("l:..."), created_time,
+//   ad_id ("ag:"), ad_name, adset_id ("as:"), adset_name, campaign_id ("c:"), campaign_name,
+//   form_id ("f:"), form_name, platform, is_organic. Prefixes are stripped.
+// first_touch is set once (or replaced by an EARLIER touch); last_touch is set on every touch.
+const idClean = (v: unknown) =>
+  clean(v, 80)
+    .replace(/^[a-z]{1,2}:/i, "")
+    .replace(/[^0-9]/g, "");
+const strOrNull = (v: unknown, max = 255) => clean(v, max) || null;
+function isoOrNull(v: unknown): string | null {
+  const s = clean(v, 60);
+  if (!s) return null;
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? new Date(t).toISOString() : null;
+}
+function prune(o: Record<string, unknown>) {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(o))
+    if (v !== null && v !== undefined && v !== "") out[k] = v;
+  return out;
+}
+const TOUCH_KEYS = [
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+  "utm_content",
+  "utm_term",
+  "utm_id",
+  "fbclid",
+  "landing_url",
+  "referrer",
+];
+// Browser first-touch object -> only known keys, cleaned.
+function cleanClientTouch(v: unknown): Record<string, unknown> | null {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const o = v as Record<string, unknown>;
+  const at = isoOrNull(o.at);
+  if (!at) return null;
+  const out: Record<string, unknown> = { at, channel: "website" };
+  for (const k of TOUCH_KEYS) {
+    const c = clean(o[k], k.endsWith("url") ? 1000 : 255);
+    if (c) out[k] = c;
+  }
+  if (o.direct === true) out.direct = true;
+  return out;
+}
+async function lookupNames(ids: string[]) {
+  const want = ids.filter(Boolean);
+  if (!want.length)
+    return {} as Record<
+      string,
+      {
+        name: string;
+        level: string;
+        campaign_id: string | null;
+        adset_id: string | null;
+      }
+    >;
+  const { data } = await supabaseAdmin
+    .from("meta_ad_lookup")
+    .select("object_id, name, level, campaign_id, adset_id")
+    .in("object_id", want);
+  const m: Record<
+    string,
+    {
+      name: string;
+      level: string;
+      campaign_id: string | null;
+      adset_id: string | null;
+    }
+  > = {};
+  for (const r of data ?? []) m[r.object_id] = r;
+  return m;
+}
+// Adds campaign/adset/ad names (and ids) to a website touch whose utm_content = ad id, utm_term = adset id.
+async function enrichFromLookup(t: Record<string, unknown>) {
+  const adId = /^\d{6,}$/.test(String(t.utm_content ?? ""))
+    ? String(t.utm_content)
+    : "";
+  const adsetId = /^\d{6,}$/.test(String(t.utm_term ?? ""))
+    ? String(t.utm_term)
+    : "";
+  if (!adId && !adsetId) return t;
+  const m = await lookupNames([adId, adsetId]);
+  const ad = adId ? m[adId] : undefined;
+  const campaignId =
+    ad?.campaign_id ?? (adsetId ? m[adsetId]?.campaign_id : null) ?? null;
+  const camp = campaignId
+    ? (await lookupNames([campaignId]))[campaignId]
+    : undefined;
+  return prune({
+    ...t,
+    ad_id: t.ad_id ?? (adId || null),
+    ad_name: t.ad_name ?? ad?.name ?? null,
+    adset_id: t.adset_id ?? (adsetId || ad?.adset_id || null),
+    adset_name: t.adset_name ?? (adsetId ? m[adsetId]?.name : null) ?? null,
+    campaign_id: t.campaign_id ?? campaignId,
+    campaign_name: t.campaign_name ?? camp?.name ?? null,
+  });
+}
+function clientIp(req: Request): string {
+  const xf = req.headers.get("x-forwarded-for") ?? "";
+  const ip = (
+    req.headers.get("cf-connecting-ip") ??
+    xf.split(",")[0] ??
+    ""
+  ).trim();
+  return /^[0-9a-f:.]{3,45}$/i.test(ip) ? ip : "";
+}
+function runInBackground(p: Promise<unknown>) {
+  // deno-lint-ignore no-explicit-any
+  const er = (globalThis as any).EdgeRuntime;
+  if (er?.waitUntil) er.waitUntil(p);
+  else return p;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsFor(req) });
@@ -261,9 +393,9 @@ Deno.serve(async (req) => {
     return json(req, 200, { success: true });
   }
 
-  const fullName = clean(body.name, 120);
+  const fullName = clean(body.name ?? body.full_name, 120);
   const email = clean(body.email, 200).toLowerCase();
-  const phone = clean(body.phone, 40);
+  const phone = clean(body.phone ?? body.phone_number, 40).replace(/^p:/i, "");
   const situation = clean(body.situation, 200);
   const readiness = clean(body.readiness, 200);
   const timeline = clean(body.timeline, 200);
@@ -286,6 +418,167 @@ Deno.serve(async (req) => {
   const firstName = parts[0];
   const lastName = parts.slice(1).join(" ") || "-";
   const now = new Date().toISOString();
+  const nowMs = Date.now();
+  const testContact = isTestEmail(email);
+  const testEventCode = testContact
+    ? (clean(body.test_event_code, 40).match(/^TEST[A-Za-z0-9]{1,30}$/)?.[0] ??
+      null)
+    : null;
+
+  // ---- attribution for this touch ----
+  const metaLeadId = idClean(
+    body.meta_lead_id ??
+      body.leadgen_id ??
+      (typeof body.id === "string" && /^l:/.test(body.id) ? body.id : ""),
+  );
+  const formId = idClean(body.form_id);
+  const isInstantForm = Boolean(metaLeadId || formId);
+  const createdTime = isoOrNull(body.created_time);
+  let submittedAt = now;
+  if (isInstantForm && createdTime) submittedAt = createdTime;
+  else {
+    const s = isoOrNull(body.submitted_at);
+    if (
+      s &&
+      Date.parse(s) > nowMs - 86400_000 &&
+      Date.parse(s) < nowMs + 300_000
+    )
+      submittedAt = s;
+  }
+  const evIdRaw = clean(body.event_id, 100);
+  const eventId = /^[A-Za-z0-9._:-]{6,100}$/.test(evIdRaw) ? evIdRaw : "";
+  const fbclid = clean(body.fbclid, 500);
+  const fbcIn = clean(body.fbc, 600);
+  const fbp = /^fb\.\d\.\d+\.\d+$/.test(clean(body.fbp, 100))
+    ? clean(body.fbp, 100)
+    : "";
+  const pageUrlRaw = clean(body.page_url, 500);
+  const pageUrl = /^https:\/\//.test(pageUrlRaw) ? pageUrlRaw : "";
+  const fbc = fbcFrom(fbcIn, fbclid, Date.parse(submittedAt));
+  const adId = idClean(body.ad_id);
+  const adsetId = idClean(body.adset_id);
+  const campaignId = idClean(body.campaign_id);
+
+  let touch: Record<string, unknown>;
+  if (isInstantForm) {
+    touch = prune({
+      at: submittedAt,
+      recorded_at: now,
+      channel: "meta_instant_form",
+      source: normLeadSource(sourcePage),
+      meta_lead_id: metaLeadId || null,
+      campaign_id: campaignId || null,
+      campaign_name: strOrNull(body.campaign_name),
+      adset_id: adsetId || null,
+      adset_name: strOrNull(body.adset_name),
+      ad_id: adId || null,
+      ad_name: strOrNull(body.ad_name),
+      form_id: formId || null,
+      form_name: strOrNull(body.form_name),
+      platform: strOrNull(body.platform, 20),
+      is_organic: strOrNull(body.is_organic, 10),
+      utm_source: "meta",
+      utm_medium: "paid",
+      utm_campaign: strOrNull(body.campaign_name),
+      utm_content: adId || null,
+      utm_term: adsetId || null,
+    });
+    // Learn id -> name pairs from the Meta export.
+    type LookupRow = {
+      object_id: string;
+      level: string;
+      name: string;
+      campaign_id: string | null;
+      adset_id: string | null;
+      updated_at: string;
+    };
+    const rows: LookupRow[] = [];
+    const add = (
+      object_id: string,
+      level: string,
+      name: unknown,
+      campaign_id: string | null = null,
+      adset_id: string | null = null,
+    ) => {
+      const n = clean(name, 255);
+      if (object_id && n)
+        rows.push({
+          object_id,
+          level,
+          name: n,
+          campaign_id,
+          adset_id,
+          updated_at: now,
+        });
+    };
+    add(campaignId, "campaign", body.campaign_name);
+    add(adsetId, "adset", body.adset_name, campaignId || null);
+    add(adId, "ad", body.ad_name, campaignId || null, adsetId || null);
+    add(formId, "form", body.form_name);
+    if (rows.length) {
+      const { error } = await supabaseAdmin
+        .from("meta_ad_lookup")
+        .upsert(rows, { onConflict: "object_id" });
+      if (error) console.error("meta_ad_lookup upsert failed", error.message);
+    }
+  } else {
+    touch = await enrichFromLookup(
+      prune({
+        at: submittedAt,
+        recorded_at: now,
+        channel: "website",
+        source: normLeadSource(sourcePage),
+        page: sourcePage || null,
+        page_url: pageUrl || null,
+        landing_url: strOrNull(body.landing_url, 1000),
+        referrer: strOrNull(body.referrer, 500),
+        ...utms,
+        utm_id: strOrNull(body.utm_id),
+        fbclid: fbclid || null,
+        fbc: fbc || null,
+        fbp: fbp || null,
+        event_id: eventId || null,
+      }),
+    );
+  }
+
+  // Same Meta lead pulled again (routines run every few hours): nothing to do.
+  if (metaLeadId) {
+    const { data: dup } = await supabaseAdmin
+      .from("lead_touches")
+      .select("contact_id")
+      .eq("meta_lead_id", metaLeadId)
+      .limit(1);
+    if (dup?.[0]) {
+      return json(req, 200, {
+        success: true,
+        duplicate: true,
+        ...(testContact || isInstantForm
+          ? { contact_id: dup[0].contact_id }
+          : {}),
+      });
+    }
+  }
+
+  // Browser-side first touch (localStorage) counts as first touch for NEW contacts when it is
+  // older than this submission and carries campaign params.
+  const clientFirst = isInstantForm ? null : cleanClientTouch(body.first_touch);
+  const firstTouchForNew =
+    clientFirst &&
+    !clientFirst.direct &&
+    Date.parse(String(clientFirst.at)) < Date.parse(submittedAt) &&
+    (clientFirst.utm_source || clientFirst.fbclid)
+      ? await enrichFromLookup({
+          ...clientFirst,
+          recorded_at: now,
+          source: normLeadSource(sourcePage),
+          page: sourcePage || null,
+        })
+      : touch;
+  const legacyUtm = (t: Record<string, unknown>) =>
+    Object.fromEntries(
+      UTM_KEYS.map((k) => [k, (t[k] as string | undefined) ?? null]),
+    );
 
   const { data: tagRows, error: tagErr } = await supabaseAdmin
     .from("tags")
@@ -337,6 +630,23 @@ Deno.serve(async (req) => {
     .limit(1);
   const salesId: number | null = sales?.[0]?.id ?? null;
 
+  const t = touch as Record<string, string | undefined>;
+  const sourceLines = isInstantForm
+    ? `- Source: Meta instant form\n` +
+      `- Campaign: ${t.campaign_name ?? "n/a"} (${t.campaign_id ?? "n/a"})\n` +
+      `- Ad set: ${t.adset_name ?? "n/a"} (${t.adset_id ?? "n/a"})\n` +
+      `- Ad: ${t.ad_name ?? "n/a"} (${t.ad_id ?? "n/a"})\n` +
+      `- Form: ${t.form_name ?? "n/a"} (${t.form_id ?? "n/a"})\n` +
+      `- Meta lead id: ${t.meta_lead_id ?? "n/a"} | platform: ${t.platform ?? "n/a"}\n` +
+      `- Submitted: ${submittedAt}\n`
+    : (t.utm_source || t.fbclid
+        ? `- Source: ${t.utm_source ?? "-"} / ${t.utm_medium ?? "-"} / ${t.utm_campaign ?? "-"}\n` +
+          (t.ad_id || t.adset_id
+            ? `- Ad: ${t.ad_name ?? "?"} (${t.ad_id ?? "?"}) | Ad set: ${t.adset_name ?? "?"} (${t.adset_id ?? "?"}) | Campaign: ${t.campaign_name ?? "?"}\n`
+            : "") +
+          (t.fbclid ? `- fbclid: yes\n` : "")
+        : `- Source: no UTM / direct\n`) + `- Submitted: ${submittedAt}\n`;
+
   const noteText =
     `Landing page form submission\n\n` +
     `- Situation: ${situation || "n/a"}\n` +
@@ -344,12 +654,15 @@ Deno.serve(async (req) => {
     `- Timeline: ${timeline || "n/a"}\n` +
     `- Consent: ${consent || "n/a"}\n` +
     `- Phone: ${phone}\n` +
-    (sourcePage ? `- Page: ${sourcePage}\n` : "");
+    (sourcePage ? `- Page: ${sourcePage}\n` : "") +
+    sourceLines;
 
   // Existing contact with this email? Add a note instead of creating a duplicate.
   const { data: existing } = await supabaseAdmin
     .from("contacts")
-    .select("id, tags, lead_source")
+    .select(
+      "id, tags, lead_source, first_touch, utm_source, utm_medium, utm_campaign, utm_content, utm_term, meta_lead_id, fbc, fbp, submitted_at",
+    )
     .contains("email_jsonb", JSON.stringify([{ email }]))
     .limit(1);
 
@@ -364,28 +677,52 @@ Deno.serve(async (req) => {
   }
 
   let contactId: number;
+  let contactFbc = fbc,
+    contactFbp = fbp;
   if (existing && existing.length > 0) {
-    contactId = existing[0].id;
-    const tags: number[] = Array.from(
-      new Set([...(existing[0].tags ?? []), ...tagIds]),
+    const ex = existing[0];
+    contactId = ex.id;
+    const tags: number[] = Array.from(new Set([...(ex.tags ?? []), ...tagIds]));
+    const oldFirst = ex.first_touch as Record<string, unknown> | null;
+    const hasLegacyUtm = Boolean(
+      ex.utm_source ||
+        ex.utm_medium ||
+        ex.utm_campaign ||
+        ex.utm_content ||
+        ex.utm_term,
     );
-    // Latest answers win; an existing lead_source is never overwritten (first touch).
-    await supabaseAdmin
-      .from("contacts")
-      .update({
-        tags,
-        last_seen: now,
-        ...leadFields,
-        // UTMs: only when this submission carries some; then the full set is replaced (latest touch wins).
-        ...(Object.keys(utms).length
-          ? Object.fromEntries(UTM_KEYS.map((k) => [k, utms[k] ?? null]))
-          : {}),
-        ...(existing[0].lead_source || !normLeadSource(sourcePage)
-          ? {}
-          : { lead_source: normLeadSource(sourcePage) }),
-      })
-      .eq("id", contactId);
+    // First touch: set when empty, or replaced by an EARLIER touch (backdated Meta import).
+    const earlier =
+      oldFirst?.at &&
+      Date.parse(String(touch.at)) < Date.parse(String(oldFirst.at));
+    const setFirst = !oldFirst ? !hasLegacyUtm : Boolean(earlier);
+    const update: Record<string, unknown> = {
+      tags,
+      last_seen: now,
+      ...leadFields,
+      last_touch: touch,
+    };
+    if (setFirst) {
+      update.first_touch = touch;
+      update.submitted_at = submittedAt;
+      Object.assign(update, legacyUtm(touch));
+      if (normLeadSource(sourcePage))
+        update.lead_source = normLeadSource(sourcePage);
+    } else {
+      if (!hasLegacyUtm && Object.keys(utms).length)
+        Object.assign(update, legacyUtm(touch));
+      if (!ex.lead_source && normLeadSource(sourcePage))
+        update.lead_source = normLeadSource(sourcePage);
+      if (!ex.submitted_at) update.submitted_at = submittedAt;
+    }
+    if (metaLeadId && !ex.meta_lead_id) update.meta_lead_id = metaLeadId;
+    if (fbc && !ex.fbc) update.fbc = fbc;
+    if (fbp && !ex.fbp) update.fbp = fbp;
+    contactFbc = ex.fbc || fbc;
+    contactFbp = ex.fbp || fbp;
+    await supabaseAdmin.from("contacts").update(update).eq("id", contactId);
   } else {
+    const ft = firstTouchForNew;
     const { data: contact, error } = await supabaseAdmin
       .from("contacts")
       .insert({
@@ -393,7 +730,9 @@ Deno.serve(async (req) => {
         last_name: lastName,
         email_jsonb: [{ email, type: "Work" }],
         phone_jsonb: [{ number: phone, type: "Work" }],
-        background: `Landing page lead. Situation: ${situation || "n/a"}. Timeline: ${timeline || "n/a"}.`,
+        background: isInstantForm
+          ? `Meta instant form lead (${t.form_name ?? "form"}). Ad: ${t.ad_name ?? "n/a"}. Situation: ${situation || "n/a"}.`
+          : `Landing page lead. Situation: ${situation || "n/a"}. Timeline: ${timeline || "n/a"}.`,
         status: statusFromReadiness(readiness),
         tags: tagIds,
         first_seen: now,
@@ -402,7 +741,13 @@ Deno.serve(async (req) => {
         sales_id: salesId,
         lead_source: normLeadSource(sourcePage),
         ...leadFields,
-        ...utms,
+        ...legacyUtm(ft),
+        first_touch: ft,
+        last_touch: touch,
+        submitted_at: (ft.at as string) ?? submittedAt,
+        meta_lead_id: metaLeadId || null,
+        fbc: fbc || null,
+        fbp: fbp || null,
       })
       .select("id")
       .single();
@@ -411,6 +756,18 @@ Deno.serve(async (req) => {
       return json(req, 500, { success: false, message: "Server error" });
     }
     contactId = contact.id;
+  }
+
+  {
+    const { error } = await supabaseAdmin.from("lead_touches").insert({
+      contact_id: contactId,
+      touch_at: submittedAt,
+      channel: isInstantForm ? "meta_instant_form" : "website",
+      meta_lead_id: metaLeadId || null,
+      event_id: eventId || null,
+      attribution: touch,
+    });
+    if (error) console.error("lead_touches insert failed", error.message);
   }
 
   await supabaseAdmin.from("contact_notes").insert({
@@ -437,11 +794,77 @@ Deno.serve(async (req) => {
       fullName,
       isQuiz,
       salesId,
-      `${isQuiz ? "Quiz" : "Landing page"} lead. Situation: ${situation || "n/a"}. Readiness: ${readiness || "n/a"}. Timeline: ${timeline || "n/a"}.`,
+      `${isInstantForm ? "Meta instant form" : isQuiz ? "Quiz" : "Landing page"} lead. Situation: ${situation || "n/a"}. Readiness: ${readiness || "n/a"}. Timeline: ${timeline || "n/a"}.`,
     );
   } catch (e) {
     console.error("company/deal creation failed", String(e));
   }
 
-  return json(req, 200, { success: true });
+  // ---- Meta Conversions API: Lead ----
+  let capi: { status: string; httpStatus?: number } = { status: "pending" };
+  const capiJob = (async () => {
+    try {
+      if (testContact && !testEventCode) {
+        capi = { status: "skipped_test_contact" };
+        return;
+      }
+      const phoneDigits = normPhone(phone);
+      const userData = await buildUserData({
+        email,
+        phone,
+        firstName,
+        lastName,
+        country:
+          phoneDigits.length === 11 && phoneDigits.startsWith("1")
+            ? "us"
+            : null,
+        contactId,
+        leadId: isInstantForm ? metaLeadId : null,
+        fbc: isInstantForm ? null : contactFbc,
+        fbp: isInstantForm ? null : contactFbp,
+        ip: isInstantForm ? null : clientIp(req),
+        userAgent: isInstantForm
+          ? null
+          : clean(req.headers.get("user-agent"), 500),
+      });
+      capi = await sendCapi(
+        isInstantForm
+          ? {
+              event_name: "Lead",
+              event_time: Math.floor(Date.parse(submittedAt) / 1000),
+              event_id: `metalead.${metaLeadId || contactId}.Lead`,
+              action_source: "system_generated",
+              user_data: userData,
+              custom_data: {
+                event_source: "crm",
+                lead_event_source: LEAD_EVENT_SOURCE,
+              },
+            }
+          : {
+              event_name: "Lead",
+              event_time: Math.floor(Date.parse(submittedAt) / 1000),
+              event_id: eventId || `lead.srv.${crypto.randomUUID()}`,
+              action_source: "website",
+              event_source_url:
+                pageUrl ||
+                `https://ernestponz-create.github.io/ecom-syndicate/${sourcePage || "quiz"}/`,
+              user_data: userData,
+              custom_data: { content_name: `${sourcePage || "website"}_lead` },
+            },
+        { contactId, testEventCode },
+      );
+    } catch (e) {
+      console.error("capi lead failed", String(e));
+      capi = { status: "error" };
+    }
+  })();
+  // Test contacts wait for the CAPI result so the test can report it; real leads don't wait.
+  if (testContact) await capiJob;
+  else await runInBackground(capiJob);
+
+  return json(req, 200, {
+    success: true,
+    ...(testContact ? { contact_id: contactId, capi } : {}),
+    ...(isInstantForm && !testContact ? { contact_id: contactId } : {}),
+  });
 });

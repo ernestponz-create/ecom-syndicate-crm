@@ -264,6 +264,30 @@ async function handleCreated(p: Record<string, any>) {
     ? trackingLines.join(", ")
     : "Calendly (no UTM)";
 
+  // Attribution touch from Calendly's tracking params (utm_* passed through the embed URL).
+  const touchAt =
+    clean(p.created_at, 40) &&
+    Number.isFinite(Date.parse(clean(p.created_at, 40)))
+      ? new Date(Date.parse(clean(p.created_at, 40))).toISOString()
+      : now;
+  const touch: Record<string, unknown> = {
+    at: touchAt,
+    recorded_at: now,
+    channel: "calendly",
+  };
+  for (const k of [
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_content",
+    "utm_term",
+    "salesforce_uuid",
+  ]) {
+    const v = clean(tracking[k], 255);
+    if (v) touch[k] = v;
+  }
+  if (eventName) touch.event = eventName;
+
   // Contact
   const contact = await findContact(email);
   let contactId: number;
@@ -296,6 +320,9 @@ async function handleCreated(p: Record<string, any>) {
       tags,
       last_seen: now,
       company_id: companyId,
+      // Latest touch only. first_touch / utm_* / lead_source are never changed here
+      // (and a DB trigger blocks overwrites anyway).
+      last_touch: touch,
     };
     if (
       phone &&
@@ -327,11 +354,33 @@ async function handleCreated(p: Record<string, any>) {
         last_seen: now,
         has_newsletter: false,
         sales_id: salesId,
+        first_touch: touch,
+        last_touch: touch,
+        submitted_at: touchAt,
+        ...Object.fromEntries(
+          [
+            "utm_source",
+            "utm_medium",
+            "utm_campaign",
+            "utm_content",
+            "utm_term",
+          ].map((k) => [k, (touch[k] as string | undefined) ?? null]),
+        ),
       })
       .select("id")
       .single();
     if (error) throw error;
     contactId = created.id;
+  }
+
+  {
+    const { error: tErr } = await db.from("lead_touches").insert({
+      contact_id: contactId,
+      touch_at: touchAt,
+      channel: "calendly",
+      attribution: touch,
+    });
+    if (tErr) console.error("lead_touches insert failed", tErr.message);
   }
 
   // Note
